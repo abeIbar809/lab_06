@@ -1,7 +1,97 @@
+import 'dart:convert';
+
+
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 
 void main() async {
-  runApp(const MyApp());
+  final WeatherService weatherService = WeatherService();
+  WidgetsFlutterBinding.ensureInitialized();
+  
+  await dotenv.load(fileName: ".env");
+
+  runApp(
+    MultiProvider(providers: [
+      ChangeNotifierProvider(create: (context) => WeatherProvider(weatherService: weatherService)),
+    ],child: MyApp(),)
+  );
+}
+
+class WeatherService { 
+
+  Future<Map<String, dynamic>> fetchWeather(String city) async {
+    final apiKey = dotenv.env['API_KEY'];
+    
+    final response = await http.get(Uri.parse(
+        'https://api.openweathermap.org/data/2.5/weather?q=$city&appid=$apiKey&units=metric'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('Failed to load weather data');
+    }
+  }
+}
+
+class WeatherData {
+  final String cityName;
+  final double temperature;
+  final String description;
+  final double feelsLike;
+  final String humidity;
+  final String windSpeed;
+  final String pressure;
+  final String icon;
+  final String dt;
+  final String country;
+
+
+  WeatherData({
+    required this.cityName,
+    required this.temperature,
+    required this.description,
+    required this.feelsLike,
+    required this.humidity, required this.windSpeed, required this.pressure, required this.icon, required this.dt, required this.country,
+  });
+
+
+
+  factory WeatherData.fromJson(Map<String, dynamic> json) {
+    return WeatherData(
+      cityName: json['name'],
+      temperature: json['main']['temp'].toDouble(),
+      description: json['weather'][0]['description'],
+      feelsLike: json['main']['feels_like'].toDouble(),
+      humidity: json['main']['humidity'].toString(), 
+      windSpeed: json['wind']['speed'].toString(),
+      pressure: json['main']['pressure'].toString(),
+      icon: json['weather'][0]['icon'],
+      dt: json['dt'].toString(),
+      country: json['sys']['country'].toString(),
+    );
+  }
+}
+
+
+class WeatherProvider extends ChangeNotifier { 
+
+  final WeatherService _weatherService;
+  WeatherData? weatherData;
+
+  WeatherProvider({required this._weatherService});
+
+  Future<void> fetchWeather(String city) async {
+    try {
+      final data = await _weatherService.fetchWeather(city);
+      weatherData = WeatherData.fromJson(data);
+      notifyListeners();
+    } catch (e) {
+      weatherData = null;
+      print(e);
+      
+    }
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -29,9 +119,25 @@ class WeatherCard extends StatefulWidget {
 }
 
 class _WeatherCardState extends State<WeatherCard> {
+
+  final TextEditingController _controller = TextEditingController();
+  @override
+  initState() { 
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final WeatherProvider weatherProvider = Provider.of<WeatherProvider>(context);
     double width = MediaQuery.of(context).size.width;
+    
+
     return Align(
       alignment: .center,
       child: Card(
@@ -42,6 +148,8 @@ class _WeatherCardState extends State<WeatherCard> {
           decoration: BoxDecoration(),
           child: Column(
             children: [
+
+              
               Padding(
                 padding: const EdgeInsets.all(8.0),
                 child: Column(
@@ -50,7 +158,7 @@ class _WeatherCardState extends State<WeatherCard> {
                       mainAxisAlignment: .center,
                       children: [
                         Text(
-                          "Today 25°",
+                          "Today ${weatherProvider.weatherData?.temperature}°",
                           style: TextStyle(
                             fontSize: 40,
                             fontWeight: FontWeight.w600,
@@ -65,7 +173,7 @@ class _WeatherCardState extends State<WeatherCard> {
                             borderRadius: BorderRadius.circular(40),
                           ),
                           child: Image.network(
-                            "https://openweathermap.org/payload/api/media/file/10d%402x.png",
+                            "https://openweathermap.org/payload/api/media/file/${weatherProvider.weatherData?.icon == null ? "10d" : weatherProvider.weatherData!.icon }.png",
                             scale: 1.3,
                           ),
                         ),
@@ -73,7 +181,7 @@ class _WeatherCardState extends State<WeatherCard> {
                     ),
                     SizedBox(height: 10),
                     Text(
-                      "Feels like 20°",
+                      "Feels like ${weatherProvider.weatherData?.feelsLike} °",
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.normal,
@@ -89,7 +197,7 @@ class _WeatherCardState extends State<WeatherCard> {
                     ),
                     SizedBox(height: 10),
                     Text(
-                      "Los Angeles, CA",
+                      "${weatherProvider.weatherData?.cityName}, ${weatherProvider.weatherData?.country}",
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.normal,
@@ -111,7 +219,7 @@ class _WeatherCardState extends State<WeatherCard> {
                     mainAxisAlignment: .center,
                     spacing: 50,
                     children: [
-                      for (int i = 0; i < 3; i++)
+                     
                         Column(
                           crossAxisAlignment: .center,
                           mainAxisAlignment: .center,
@@ -123,7 +231,35 @@ class _WeatherCardState extends State<WeatherCard> {
                                 fontSize: 15,
                               ),
                             ),
-                            Text("1012 hPa"),
+                            Text("${weatherProvider.weatherData?.pressure} hPa"),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: .center,
+                          mainAxisAlignment: .center,
+                          children: [
+                            Text(
+                              "Humidity",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 15,
+                              ),
+                            ),
+                            Text("${weatherProvider.weatherData?.humidity}%"),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: .center,
+                          mainAxisAlignment: .center,
+                          children: [
+                            Text(
+                              "Wind speed",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 15,
+                              ),
+                            ),
+                            Text("${weatherProvider.weatherData?.windSpeed} m/s"),
                           ],
                         ),
                     ],
@@ -143,6 +279,10 @@ class _WeatherCardState extends State<WeatherCard> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                   ),
+                  onChanged: (value) => {
+                    _controller.text = value
+                  },
+                 
                 ),
               ),
 
@@ -153,7 +293,9 @@ class _WeatherCardState extends State<WeatherCard> {
                     backgroundColor: Colors.lightBlue,
                     minimumSize: Size(width, 40),
                   ),
-                  onPressed: () {},
+                  onPressed: () {
+                    weatherProvider.fetchWeather(_controller.text);
+                  },
                   child: Text("Search", style: TextStyle(color: Colors.white)),
                 ),
               ),
@@ -164,6 +306,8 @@ class _WeatherCardState extends State<WeatherCard> {
     );
   }
 }
+
+
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
